@@ -16,9 +16,13 @@ async function request(path, options = {}) {
   });
 
   if (res.status === 401) {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    throw new Error("Session expired. Please login.");
+    const data = await res.json().catch(() => ({}));
+    if (token) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      throw new Error(data.error || "Session expired. Please login.");
+    }
+    throw new Error(data.error || "Unauthorized");
   }
 
   if (!res.ok) {

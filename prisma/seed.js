@@ -1,3 +1,4 @@
+require("dotenv").config();
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcryptjs");
 
@@ -63,7 +64,9 @@ async function main() {
   const shirtCategory = await prisma.category.findUnique({ where: { name: "Shirts" } });
   const formalShirt = await prisma.subcategory.findFirst({ where: { name: "Formal Shirts" } });
 
-  const product = await prisma.product.create({
+  const existingShirt = await prisma.product.findUnique({ where: { barcode: "8900000000101" } });
+  if (!existingShirt) {
+    await prisma.product.create({
     data: {
       name: "Classic White Formal Shirt",
       description: "A premium cotton formal shirt perfect for office and special occasions. Made with 100% organic cotton.",
@@ -90,8 +93,11 @@ async function main() {
       },
     },
   });
+  }
 
   const tshirtCategory = await prisma.category.findUnique({ where: { name: "T-Shirts" } });
+  const existingPolo = await prisma.product.findUnique({ where: { barcode: "8900000000201" } });
+  if (!existingPolo) {
   await prisma.product.create({
     data: {
       name: "Premium Cotton Polo T-Shirt",
@@ -117,8 +123,11 @@ async function main() {
       },
     },
   });
+  }
 
   const jeansCategory = await prisma.category.findUnique({ where: { name: "Jeans" } });
+  const existingJeans = await prisma.product.findUnique({ where: { barcode: "8900000000301" } });
+  if (!existingJeans) {
   await prisma.product.create({
     data: {
       name: "Slim Fit Stretch Jeans",
@@ -143,6 +152,7 @@ async function main() {
       },
     },
   });
+  }
 
   console.log("Database seeded successfully!");
 }
