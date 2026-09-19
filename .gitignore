@@ -1,0 +1,8 @@
+node_modules
+prisma/dev.db
+uploads/*
+!uploads/.gitkeep
+.env
+*.log
+__pycache__/
+frontend/dist

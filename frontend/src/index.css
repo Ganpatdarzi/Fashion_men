@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cream: #faf7f0;
+  --color-cream-light: #fdfcf9;
+  --color-accent: #b08968;
+  --color-accent-dark: #8f6a4b;
+  --color-accent-semi: #e6d9c8;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+body {
+  @apply bg-cream text-gray-900;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #pos-receipt,
+  #pos-receipt * {
+    visibility: visible;
+  }
+  #pos-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    border: none;
+  }
+}
