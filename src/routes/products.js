@@ -1,8 +1,35 @@
 const router = require("express").Router();
+const multer = require("multer");
 const { PrismaClient } = require("@prisma/client");
 const { authenticate, adminOnly } = require("../middleware/auth");
+const { uploadBuffer } = require("../utils/cloudinary");
 
 const prisma = new PrismaClient();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = /jpeg|jpg|png|gif|webp/;
+    const ext = allowed.test(file.originalname.split(".").pop().toLowerCase());
+    const mime = allowed.test(file.mimetype.split("/")[1]);
+    if (ext || mime) return cb(null, true);
+    const err = new Error("Only images (jpg/png/gif/webp) are allowed");
+    err.status = 400;
+    cb(err);
+  },
+});
+
+// Admin: upload a product image to Cloudinary
+router.post("/upload-image", authenticate, adminOnly, upload.single("image"), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No image file provided" });
+    const result = await uploadBuffer(req.file.buffer, { folder: "fashion-men/products" });
+    res.status(201).json({ url: result.secure_url, publicId: result.public_id });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Public: list products with search, filter, sort, pagination
 router.get("/", async (req, res, next) => {
@@ -87,7 +114,7 @@ router.post("/", authenticate, adminOnly, async (req, res, next) => {
 // Admin: update product
 router.put("/:id", authenticate, adminOnly, async (req, res, next) => {
   try {
-    const { name, description, price, discount, brand, material, fit, categoryId, subcategoryId, isActive, barcode, variants } = req.body;
+    const { name, description, price, discount, brand, material, fit, categoryId, subcategoryId, isActive, barcode, variants, images } = req.body;
     const productId = Number(req.params.id);
 
     await prisma.$transaction(async (tx) => {
@@ -95,6 +122,19 @@ router.put("/:id", authenticate, adminOnly, async (req, res, next) => {
         where: { id: productId },
         data: { name, description, price: Number(price), discount: Number(discount || 0), brand, material, fit, categoryId, subcategoryId, isActive, barcode: (barcode || "").trim() || null },
       });
+
+      if (Array.isArray(images)) {
+        await tx.productImage.deleteMany({ where: { productId } });
+        if (images.length) {
+          await tx.productImage.createMany({
+            data: images.map((img, i) => ({
+              productId,
+              url: typeof img === "string" ? img : img.url,
+              isPrimary: img.isPrimary || (i === 0 && !images.some((x) => x.isPrimary)),
+            })),
+          });
+        }
+      }
 
       if (Array.isArray(variants)) {
         for (const v of variants) {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Html5Qrcode } from "html5-qrcode";
 import { api } from "../../lib/api";
 
 function price(p) {
@@ -22,7 +23,13 @@ export default function AdminPosPage() {
   const [done, setDone] = useState(null);
   const [scanCode, setScanCode] = useState("");
   const [scanMsg, setScanMsg] = useState(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraErr, setCameraErr] = useState("");
   const scanRef = useRef(null);
+  const scanBufferRef = useRef("");
+  const scanningRef = useRef(false);
+  const scannerRef = useRef(null);
+  const scannerDivId = "pos-camera-scanner";
 
   useEffect(() => {
     if (scanMsg) {
@@ -38,7 +45,44 @@ export default function AdminPosPage() {
   useEffect(() => {
     load();
     api.get("/admin/customers").then(setCustomers).catch(() => {});
+    return () => stopCamera();
   }, []);
+
+  const stopCamera = async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+      } catch {}
+      try {
+        scannerRef.current.clear();
+      } catch {}
+      scannerRef.current = null;
+    }
+  };
+
+  const startCamera = async () => {
+    setCameraErr("");
+    setCameraOpen(true);
+    try {
+      await new Promise((r) => setTimeout(r, 100));
+      const scanner = new Html5Qrcode(scannerDivId);
+      scannerRef.current = scanner;
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 220 },
+        async (decodedText) => {
+          await stopCamera();
+          setCameraOpen(false);
+          runScan(decodedText);
+        },
+        () => {}
+      );
+    } catch (err) {
+      setCameraErr(err?.message || "Could not start camera. Allow camera access and try again.");
+      setCameraOpen(false);
+      scannerRef.current = null;
+    }
+  };
 
   const selectCustomer = (e) => {
     const id = e.target.value;
@@ -81,15 +125,12 @@ export default function AdminPosPage() {
 
   const subtotal = cart.reduce((s, c) => s + price(c.product) * c.quantity, 0);
 
-  const handleScan = async (e) => {
-    e.preventDefault();
-    const code = scanCode.trim();
-    if (!code) return;
+  const runScan = async (code) => {
+    const clean = (code || "").trim();
+    if (!clean) return;
     setScanMsg(null);
-    const reset = () => { setScanCode(""); scanRef.current?.focus(); };
     try {
-      const data = await api.get(`/admin/pos/scan/${encodeURIComponent(code)}`);
-      reset();
+      const data = await api.get(`/admin/pos/scan/${encodeURIComponent(clean)}`);
       if (data.variant) {
         if (data.variant.stock <= 0) return setScanMsg({ type: "err", text: `${data.product.name} (${data.variant.size}/${data.variant.color}) is out of stock` });
         addToCart({ ...data.variant, product: data.product }, 1);
@@ -107,10 +148,43 @@ export default function AdminPosPage() {
         }
       }
     } catch (err) {
-      reset();
       setScanMsg({ type: "err", text: err.message || "Barcode not found" });
     }
   };
+
+  const handleScan = (e) => {
+    e.preventDefault();
+    const code = scanCode;
+    setScanCode("");
+    scanRef.current?.focus();
+    runScan(code);
+  };
+
+  const resetScanBuffer = () => {
+    scanBufferRef.current = "";
+    scanningRef.current = false;
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (scanRef.current && document.activeElement === scanRef.current) return;
+      const tag = e.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key.length === 1) {
+        scanBufferRef.current += e.key;
+        scanningRef.current = true;
+        return;
+      }
+      if ((e.key === "Enter" || e.key === "NumpadEnter") && scanningRef.current) {
+        e.preventDefault();
+        const code = scanBufferRef.current;
+        resetScanBuffer();
+        runScan(code);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const completeSale = async () => {
     setError("");
@@ -175,6 +249,13 @@ export default function AdminPosPage() {
               autoFocus
               className="flex-1 text-sm bg-transparent focus:outline-none"
             />
+            <button
+              type="button"
+              onClick={startCamera}
+              className="shrink-0 text-xs font-semibold bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-accent"
+            >
+              Open Camera Scanner
+            </button>
             <span className="text-xs text-gray-400">Enter ↵</span>
           </form>
           {scanMsg && (
@@ -347,6 +428,25 @@ export default function AdminPosPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {cameraOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+              <h3 className="font-bold">Scan Barcode</h3>
+              <button onClick={() => { stopCamera(); setCameraOpen(false); }} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+            <div className="p-4 bg-gray-900">
+              <div id={scannerDivId} className="w-full overflow-hidden rounded-lg" />
+            </div>
+            <p className="text-xs text-gray-500 px-5 py-3">Point the camera at a product barcode. It will be added automatically.</p>
+          </div>
+        </div>
+      )}
+
+      {cameraErr && (
+        <div className="fixed bottom-5 right-5 bg-red-50 text-red-700 text-sm px-4 py-2 rounded-lg shadow-lg z-50 max-w-xs">{cameraErr}</div>
       )}
     </div>
   );
